@@ -20,10 +20,11 @@ def generate():
     with open(f"{res_values_dir}/colors.xml", "w") as f:
         f.write(colors_content)
 
+    # UPDATED: Using native DeviceDefault to avoid adding the heavy MDC XML dependency
     themes_content = """<?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.VideoCompressor" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
+<resources>
+    <style name="Theme.VideoCompressor" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:colorPrimary">@color/primary</item>
         <item name="android:statusBarColor">@color/primary_variant</item>
     </style>
 </resources>
@@ -62,7 +63,7 @@ def generate():
     with open(f"{manifest_dir}/AndroidManifest.xml", "w") as f:
         f.write(manifest_content)
     
-    print("✅ 3-Manifest & Resources Generated")
+    print("✅ 3-Manifest & Resources Generated (Native Theme Fix)")
 
 if __name__ == "__main__":
     generate()
