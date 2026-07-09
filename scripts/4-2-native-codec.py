@@ -56,10 +56,20 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
     if (videoTrackIndex < 0) return JNI_FALSE;
     AMediaExtractor_selectTrack(extractor, videoTrackIndex);
 
-    int fd = open(out_path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
-    if (fd < 0) return JNI_FALSE;
+    // CRITICAL FIX: O_RDWR instead of O_WRONLY. 
+    // The muxer MUST seek back to the file header to successfully write the moov atom!
+    int fd = open(out_path, O_CREAT | O_RDWR | O_TRUNC, 0666);
+    if (fd < 0) {
+        LOGE("Failed to open output file descriptor");
+        return JNI_FALSE;
+    }
 
     AMediaMuxer *muxer = AMediaMuxer_new(fd, AMEDIAMUXER_OUTPUT_FORMAT_MPEG_4);
+    if (!muxer) {
+        LOGE("Failed to create muxer");
+        close(fd);
+        return JNI_FALSE;
+    }
     
     ssize_t muxerTrackIndex = AMediaMuxer_addTrack(muxer, videoFormat);
     AMediaMuxer_start(muxer);
@@ -67,18 +77,23 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
     int maxInputSize = 0;
     AMediaFormat_getInt32(videoFormat, AMEDIAFORMAT_KEY_MAX_INPUT_SIZE, &maxInputSize);
     
-    // CRITICAL FIX: Ensure extraction capacity is explicitly defined and greater than 0
     size_t bufferCapacity = (maxInputSize > 0) ? maxInputSize : (1024 * 1024 * 2); 
     uint8_t *buffer = new uint8_t[bufferCapacity];
 
     int lastProgress = -1;
+    int64_t firstPts = -1;
+
     while (true) {
-        // Pass the explicit bufferCapacity to the extractor, rather than the raw metadata size
         ssize_t sampleSize = AMediaExtractor_readSampleData(extractor, buffer, bufferCapacity);
         if (sampleSize < 0) break;
 
         int64_t presentationTimeUs = AMediaExtractor_getSampleTime(extractor);
         uint32_t flags = AMediaExtractor_getSampleFlags(extractor);
+
+        // Normalize PTS to start exactly at 0 to prevent muxer header corruption
+        if (firstPts < 0) firstPts = presentationTimeUs;
+        presentationTimeUs -= firstPts;
+        if (presentationTimeUs < 0) presentationTimeUs = 0;
 
         AMediaCodecBufferInfo info;
         info.offset = 0;
@@ -86,7 +101,10 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
         info.presentationTimeUs = presentationTimeUs;
         info.flags = flags;
 
-        AMediaMuxer_writeSampleData(muxer, muxerTrackIndex, buffer, &info);
+        media_status_t writeStatus = AMediaMuxer_writeSampleData(muxer, muxerTrackIndex, buffer, &info);
+        if (writeStatus != AMEDIA_OK) {
+            LOGE("Failed to write sample data");
+        }
 
         if (durationUs > 0) {
             int progress = (int)((presentationTimeUs * 100) / durationUs);
@@ -99,9 +117,12 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
     }
 
     delete[] buffer;
+    
+    // Explicit stop and cleanup order is mandatory for MP4 generation
     AMediaMuxer_stop(muxer);
     AMediaMuxer_delete(muxer);
     close(fd);
+    
     AMediaExtractor_delete(extractor);
     AMediaFormat_delete(videoFormat);
     
@@ -113,7 +134,7 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
 """
     with open(f"{cpp_dir}/native-codec.cpp", "w") as f:
         f.write(cpp_content)
-    print("✅ 4-2 Generated native-codec.cpp (Fixed 0-byte Buffer Extraction Bug)")
+    print("✅ 4-2 Generated native-codec.cpp (Fixed Muxer Header Corruption)")
 
 if __name__ == "__main__":
     generate()
