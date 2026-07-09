@@ -1,0 +1,44 @@
+name: Video Compressor Build Engine
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run Orchestration Scripts
+        run: |
+          mkdir -p scripts
+          shopt -s nullglob
+          # Sort numerically and execute
+          for script in scripts/[0-9]*.py; do
+            echo "::group::Executing $script"
+            python3 "$script"
+            echo "::endgroup::"
+          done
+          shopt -u nullglob
+
+      - name: Upload Finished APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-compressor-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
