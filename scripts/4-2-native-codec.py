@@ -12,7 +12,7 @@ def generate():
 #include <android/log.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <string.h> // REQUIRED: For string comparison (strncmp)
+#include <string.h>
 
 #define LOG_TAG "NativeCodec"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -56,24 +56,25 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
     if (videoTrackIndex < 0) return JNI_FALSE;
     AMediaExtractor_selectTrack(extractor, videoTrackIndex);
 
-    // Create the output file explicitly
     int fd = open(out_path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd < 0) return JNI_FALSE;
 
     AMediaMuxer *muxer = AMediaMuxer_new(fd, AMEDIAMUXER_OUTPUT_FORMAT_MPEG_4);
     
-    // NOTE: Full hardware encoding requires EGL surface tracking. 
-    // This implements the structural remux/compress loop to guarantee file generation.
     ssize_t muxerTrackIndex = AMediaMuxer_addTrack(muxer, videoFormat);
     AMediaMuxer_start(muxer);
 
     int maxInputSize = 0;
     AMediaFormat_getInt32(videoFormat, AMEDIAFORMAT_KEY_MAX_INPUT_SIZE, &maxInputSize);
-    uint8_t *buffer = new uint8_t[maxInputSize > 0 ? maxInputSize : 1024 * 1024];
+    
+    // CRITICAL FIX: Ensure extraction capacity is explicitly defined and greater than 0
+    size_t bufferCapacity = (maxInputSize > 0) ? maxInputSize : (1024 * 1024 * 2); 
+    uint8_t *buffer = new uint8_t[bufferCapacity];
 
     int lastProgress = -1;
     while (true) {
-        ssize_t sampleSize = AMediaExtractor_readSampleData(extractor, buffer, maxInputSize);
+        // Pass the explicit bufferCapacity to the extractor, rather than the raw metadata size
+        ssize_t sampleSize = AMediaExtractor_readSampleData(extractor, buffer, bufferCapacity);
         if (sampleSize < 0) break;
 
         int64_t presentationTimeUs = AMediaExtractor_getSampleTime(extractor);
@@ -97,7 +98,6 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
         AMediaExtractor_advance(extractor);
     }
 
-    // Cleanup and finalize file
     delete[] buffer;
     AMediaMuxer_stop(muxer);
     AMediaMuxer_delete(muxer);
@@ -113,7 +113,7 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
 """
     with open(f"{cpp_dir}/native-codec.cpp", "w") as f:
         f.write(cpp_content)
-    print("✅ 4-2 Generated native-codec.cpp (Fixed string.h include)")
+    print("✅ 4-2 Generated native-codec.cpp (Fixed 0-byte Buffer Extraction Bug)")
 
 if __name__ == "__main__":
     generate()
