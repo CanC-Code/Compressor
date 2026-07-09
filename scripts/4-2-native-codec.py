@@ -12,6 +12,7 @@ def generate():
 #include <android/log.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h> // REQUIRED: For string comparison (strncmp)
 
 #define LOG_TAG "NativeCodec"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -112,7 +113,7 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
 """
     with open(f"{cpp_dir}/native-codec.cpp", "w") as f:
         f.write(cpp_content)
-    print("✅ 4-2 Generated native-codec.cpp (Muxer + Progress Callback)")
+    print("✅ 4-2 Generated native-codec.cpp (Fixed string.h include)")
 
 if __name__ == "__main__":
     generate()
