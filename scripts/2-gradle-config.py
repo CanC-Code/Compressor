@@ -57,11 +57,14 @@ dependencies {
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.material3:material3'
     
-    // ADDED: WorkManager for robust background execution
+    // WorkManager for robust background execution
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
+    
+    // REQUIRED FIX: Compose LiveData support for observeAsState
+    implementation 'androidx.compose.runtime:runtime-livedata'
 }
 """
     with open(f"{app_dir}/build.gradle", "w") as f: f.write(app_build_content)
-    print("✅ 2-Gradle Configuration Generated (Added WorkManager)")
+    print("✅ 2-Gradle Configuration Generated (Added WorkManager + LiveData Compose)")
 
 if __name__ == "__main__": generate()
