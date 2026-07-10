@@ -53,6 +53,12 @@ class CompressorWorker(appContext: Context, workerParams: WorkerParameters) :
             applicationContext.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(inFile).use { output -> input.copyTo(output) }
             }
+            
+            // CRITICAL FIX: Validate that the file was successfully copied to the internal cache
+            // If the URI was remote (e.g., cloud storage) and failed, this prevents the C++ crash.
+            if (!inFile.exists() || !inFile.canRead() || inFile.length() == 0L) {
+                return@withContext Result.failure(workDataOf("ERROR" to "Input file inaccessible or empty"))
+            }
 
             // 2. Execute Native Engine with Progress Callback
             val success = engine.compressVideoNative(inFile.absolutePath, outFile.absolutePath, object : ProgressCallback {
@@ -61,14 +67,19 @@ class CompressorWorker(appContext: Context, workerParams: WorkerParameters) :
                 }
             })
 
-            if (success && outFile.exists()) {
+            // Ensure compression succeeded AND the output file is valid before copying it back
+            if (success && outFile.exists() && outFile.length() > 0L) {
                 setProgress(workDataOf("PROGRESS" to 99))
+                
                 // 3. Stream to user destination
                 applicationContext.contentResolver.openOutputStream(outputUri)?.use { output ->
                     outFile.inputStream().use { input -> input.copyTo(output) }
                 }
+                
+                // Cleanup
                 inFile.delete()
                 outFile.delete()
+                
                 setProgress(workDataOf("PROGRESS" to 100))
                 Result.success()
             } else {
@@ -123,9 +134,9 @@ class MainActivity : ComponentActivity() {
         val outputLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri -> outputUri = uri }
 
         val workInfos by workManager.getWorkInfosByTagLiveData("compress_tag").observeAsState(emptyList())
-        val workInfo = workInfos.firstOrNull { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+        val workInfo = workInfos.firstOrNull { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.FAILED || it.state == WorkInfo.State.SUCCEEDED }
         
-        val isRunning = workInfo != null
+        val isRunning = workInfo?.state == WorkInfo.State.RUNNING || workInfo?.state == WorkInfo.State.ENQUEUED
         val progress = workInfo?.progress?.getInt("PROGRESS", 0) ?: 0
 
         Column(
@@ -175,8 +186,10 @@ class MainActivity : ComponentActivity() {
                     progress = { progress / 100f },
                     modifier = Modifier.fillMaxWidth().height(8.dp)
                 )
-            } else if (workInfos.firstOrNull()?.state == WorkInfo.State.SUCCEEDED) {
+            } else if (workInfo?.state == WorkInfo.State.SUCCEEDED) {
                 Text("✅ Compression Complete!", color = MaterialTheme.colorScheme.primary)
+            } else if (workInfo?.state == WorkInfo.State.FAILED) {
+                Text("❌ Compression Failed. Ensure video is local.", color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -189,7 +202,7 @@ class MainActivity : ComponentActivity() {
     with open(f"{package_path}/CompressorApp.kt", "w") as f:
         f.write("package com.videocompressor\nimport android.app.Application\nclass CompressorApp : Application()\n")
 
-    print("✅ 5 Generated Kotlin Core (WorkManager & Progress Meter)")
+    print("✅ 5 Generated Kotlin Core (Added File Validation & Error State)")
 
 if __name__ == "__main__":
     generate()
