@@ -206,8 +206,14 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
         AMediaFormat_getInt32(ctx.videoFormat, AMEDIAFORMAT_KEY_FRAME_RATE, &frameRate);
         AMediaFormat_getInt64(ctx.videoFormat, AMEDIAFORMAT_KEY_BIT_RATE, &sourceBitrate);
 
+        // NOTE: deliberately using the raw key string "rotation-degrees" here
+        // instead of the AMEDIAFORMAT_KEY_ROTATION symbol. That symbol is
+        // annotated __INTRODUCED_IN(28) in the NDK headers, and this project's
+        // minSdk is 26 - Clang's -Wunguarded-availability rejects the mere
+        // *reference* to it at compile time (not just at link time), even
+        // though the key itself works fine as a plain string on API 26+.
         int32_t rotation = 0;
-        bool hasRotation = AMediaFormat_getInt32(ctx.videoFormat, AMEDIAFORMAT_KEY_ROTATION, &rotation);
+        bool hasRotation = AMediaFormat_getInt32(ctx.videoFormat, "rotation-degrees", &rotation);
 
         const char *srcMime = nullptr;
         AMediaFormat_getString(ctx.videoFormat, AMEDIAFORMAT_KEY_MIME, &srcMime);
@@ -226,7 +232,7 @@ Java_com_videocompressor_NativeEngine_compressVideoNative(
             AMediaFormat_setInt32(encFormat, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL, 2);
             AMediaFormat_setInt32(encFormat, AMEDIAFORMAT_KEY_COLOR_FORMAT, COLOR_FormatSurface);
             if (hasRotation) {
-                AMediaFormat_setInt32(encFormat, AMEDIAFORMAT_KEY_ROTATION, rotation);
+                AMediaFormat_setInt32(encFormat, "rotation-degrees", rotation);
             }
 
             ctx.encoder = AMediaCodec_createEncoderByType("video/avc");
