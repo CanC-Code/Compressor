@@ -21,19 +21,32 @@ find_library(
         log-lib
         log)
 
-# CRITICAL: Linking mediandk gives us access to NdkMediaCodec for hardware HEVC encoding
+# Linking mediandk gives us access to NdkMediaCodec, NdkMediaExtractor,
+# NdkMediaMuxer and NdkMediaFormat for real hardware-accelerated H.264
+# decode/encode transcoding (not a same-format passthrough remux).
 find_library(
         mediandk-lib
         mediandk)
 
+# REQUIRED FIX: ANativeWindow_acquire/_release (used for the encoder's Surface
+# input in native-codec.cpp) live in libandroid.so, NOT libmediandk.so.
+# Without this the linker fails with "undefined reference to
+# ANativeWindow_release" as soon as the real Surface-to-Surface decode/encode
+# pipeline is compiled in, which previously produced a build that either
+# failed to link or silently fell back to the old broken passthrough path.
+find_library(
+        android-lib
+        android)
+
 target_link_libraries(
         videocompressor
         ${log-lib}
-        ${mediandk-lib})
+        ${mediandk-lib}
+        ${android-lib})
 """
     with open(f"{cmake_dir}/CMakeLists.txt", "w") as f:
         f.write(cmake_content)
-    print("✅ 4-1-CMakeLists.txt Generated (Linked mediandk)")
+    print("✅ 4-1-CMakeLists.txt Generated (Linked mediandk + android for hardware transcode)")
 
 if __name__ == "__main__":
     generate()
